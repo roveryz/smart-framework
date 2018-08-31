@@ -7,7 +7,7 @@ package online.xiaohei.framework.util;
  * 总之是来加载基础包名下的所有类的
  * Question:为什么需要自己写这个类加载器呢？
  * Question:关于classloader我只知道bootstrap classloader，双亲委托机制之类的，所以这个classloader到底是为什么要用在框架里呢？
- * 以及经常被问到的：如果我想加载一个自己的类，绕过双亲委托，咋办。为啥要加载自己的类，怎么做。
+ * 以及经常被问到的：如果我想加载一个自己的类，绕过双亲委托，咋办。为啥要加载自己的类，怎么做。->重写loadClass()
  */
 
 import org.slf4j.Logger;
@@ -38,10 +38,12 @@ public final class ClassUtil {
     /**
      * load class
      * hint : for improve class loading's performance, we can set isInitialized = false (??? what ??? why ???)
+     * 自己写的loadClass会破坏双亲委派
      */
     public static Class<?> loadClass(String className, boolean isInitialized) {
         Class<?> cls;
         try {
+            // 这里提到的初始化是指是否执行类的静态代码块
             cls = Class.forName(className, isInitialized, getClassLoader());// 用一个类名、是否已加载的布尔值、一个类加载器，获取一个类
         } catch (ClassNotFoundException e) {
             LOGGER.error("load class failure", e);
@@ -100,10 +102,32 @@ public final class ClassUtil {
 
     private static void addClass(Set<Class<?>> classSet, String packagePath, String packageName) {
         File[] files = new File(packagePath).listFiles(new FileFilter() {
-            public boolean accept(File pathname) {
-                // TODO: 2018/7/1  
-                return false;
+            public boolean accept(File file) {
+                return (file.isFile() && file.getName().endsWith(".class"))
+                        || file.isDirectory();
             }
-        })
+        });
+        // for each file, if is file, classname is filename, if has packagename, classname+=packagename, addClass
+        // if not file, 递归直到is文件
+        for (File file : files) {
+            String filename = file.getName();
+            if (file.isFile()) {
+                String classname = filename.substring(0, filename.lastIndexOf("."));
+                if (StringUtil.isNotEmpty(packageName)) {
+                    classname = packageName + "." + classname;
+                }
+                doAddClass(classSet, classname);
+            } else {
+                String subPackagePath = filename;
+                if (StringUtil.isNotEmpty(packagePath)) {
+                    subPackagePath = packagePath + "/" + subPackagePath;
+                }
+                String subPackageName = filename;
+                if (StringUtil.isNotEmpty(packageName)) {
+                    subPackageName = packageName + "." + subPackageName;
+                }
+                addClass(classSet, subPackagePath, subPackageName);
+            }
+        }
     }
 }
